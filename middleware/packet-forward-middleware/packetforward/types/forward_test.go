@@ -57,3 +57,19 @@ func TestTimeoutUnmarshalJSON(t *testing.T) {
 
 	require.Equal(t, "60000000000", string(timeoutBz))
 }
+
+func TestForwardMetadataNextKeepsBytes(t *testing.T) {
+	memo := []byte(`{"forward":{"receiver":"r","port":"transfer","channel":"channel-0","next": { "b" : "<&>",  "a" : 1e20 } }}`)
+	var packetMetadata types.PacketMetadata
+	require.NoError(t, json.Unmarshal(memo, &packetMetadata))
+	// The bytes are copied, not kept as a slice of the input.
+	for i := range memo {
+		memo[i] = ' '
+	}
+	require.Equal(t, `{ "b" : "<&>",  "a" : 1e20 }`, packetMetadata.Forward.Next.Memo())
+	require.NoError(t, packetMetadata.Forward.Validate())
+
+	require.NoError(t, json.Unmarshal([]byte(`{"forward":{"receiver":"r","port":"transfer","channel":"channel-0","next":"hello"}}`), &packetMetadata))
+	require.Equal(t, "hello", packetMetadata.Forward.Next.Memo())
+	require.Error(t, packetMetadata.Forward.Validate())
+}

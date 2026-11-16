@@ -8,7 +8,6 @@ import (
 	"github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8/packetforward/keeper"
 	"github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8/packetforward/types"
 	"github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8/test"
-	"github.com/iancoleman/orderedmap"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -391,7 +390,7 @@ func TestOnRecvPacket_ForwardMultihopStringNext(t *testing.T) {
 			Receiver: hostAddr2,
 			Port:     port,
 			Channel:  channel,
-			Next:     types.NewJSONObject(false, nextBz, orderedmap.OrderedMap{}),
+			Next:     types.NewJSONObject(nextBz),
 		},
 	}
 
