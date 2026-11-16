@@ -97,7 +97,7 @@ func cost(reps int, fn func()) (time.Duration, uint64) {
 		best = min(best, time.Since(start))
 	}
 	runtime.ReadMemStats(&after)
-	return best, (after.TotalAlloc - before.TotalAlloc) / uint64(reps)
+	return best, (after.TotalAlloc - before.TotalAlloc) / uint64(reps) //nolint:gosec // reps is a small positive constant
 }
 
 // TestMemoCostIsLinear measures, for each attack memo, the time and the
@@ -106,13 +106,13 @@ func cost(reps int, fn func()) (time.Duration, uint64) {
 // It checks that the allocation is linear in the memo length, with a small
 // factor, also for memos far longer than ibc-go's 32 KiB MsgTransfer limit.
 func TestMemoCostIsLinear(t *testing.T) {
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		t.Skip("measurement")
 	}
 	const reps = 5
 	// allocBound is the allocation allowed for a packet with data of n
 	// bytes: a constant for the mocks and the keeper, and a linear term.
-	allocBound := func(n int) uint64 { return 64<<10 + 100*uint64(n) }
+	allocBound := func(n int) uint64 { return 64<<10 + 100*uint64(n) } //nolint:gosec // n is a length
 
 	for _, n := range []int{maxMemoLength, 32 * maxMemoLength} {
 		for name, memo := range attackMemos(`,"retries":255,"timeout":"1ns"`, n) {
@@ -130,7 +130,7 @@ func TestMemoCostIsLinear(t *testing.T) {
 				fwdPackets := make([]channeltypes.Packet, reps)
 				for i := range fwdPackets {
 					fwdPackets[i] = fwdPacket
-					fwdPackets[i].Sequence += uint64(i)
+					fwdPackets[i].Sequence += uint64(i) //nolint:gosec // i is a small index
 				}
 				i := 0
 				var retried string
@@ -158,6 +158,9 @@ func TestMemoCostIsLinear(t *testing.T) {
 // linearly with their count: doubling the count at most about doubles the
 // allocation.
 func TestRepeatedKeysAreLinear(t *testing.T) {
+	if raceEnabled {
+		t.Skip("measurement")
+	}
 	f := newForwarder(t)
 	memo := func(n int) string {
 		return forwardMemo(`,"next":{"a":1}` + strings.Repeat(`,"next":{"b":[1,2,3]}`, n))
