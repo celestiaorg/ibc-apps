@@ -43,3 +43,30 @@ func TestOnRecvPacket_ForwardDecodesToNil(t *testing.T) {
 		require.False(t, ack.Success(), memo)
 	}
 }
+
+// fixedErrorAck is the acknowledgement for every forward memo that
+// packet-forward-middleware rejects.
+const fixedErrorAck = `{"error":"packet-forward-middleware error: forward failed"}`
+
+// TestOnRecvPacket_ErrorAckIsFixed checks that forward memos rejected for
+// different reasons all get the same acknowledgement bytes, with no Go
+// error text in them.
+func TestOnRecvPacket_ErrorAckIsFixed(t *testing.T) {
+	for name, memo := range map[string]string{
+		"receiver is a number":     `{"forward":{"receiver":5,"port":"transfer","channel":"channel-0"}}`,
+		"invalid port":             `{"forward":{"receiver":"r","port":"x","channel":"channel-0"}}`,
+		"invalid channel":          `{"forward":{"receiver":"r","port":"transfer","channel":"!"}}`,
+		"empty receiver":           `{"forward":{"port":"transfer","channel":"channel-0"}}`,
+		"timeout out of range":     `{"forward":{"receiver":"r","port":"transfer","channel":"channel-0","timeout":1e19}}`,
+		"invalid duration string":  `{"forward":{"receiver":"r","port":"transfer","channel":"channel-0","timeout":"1e19"}}`,
+		"retries over uint8":       `{"forward":{"receiver":"r","port":"transfer","channel":"channel-0","retries":256}}`,
+		"forward decodes to null":  `{"forward":{"receiver":"r","port":"transfer","channel":"channel-0"},"Forward":null}`,
+		"forward is a string":      `{"forward":"x"}`,
+		"forward is a number":      `{"forward":5}`,
+		"forward is an empty list": `{"forward":[]}`,
+	} {
+		ack := recvWithoutForwarding(t, memo)
+		require.NotNil(t, ack, name)
+		require.Equal(t, fixedErrorAck, string(ack.Acknowledgement()), name)
+	}
+}

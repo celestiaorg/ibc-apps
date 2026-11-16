@@ -147,12 +147,19 @@ func GetReceiver(channel string, originalSender string) (string, error) {
 	return sdk.Bech32ifyAddressBytes(bech32Prefix, sender)
 }
 
-// newErrorAcknowledgement returns an error that identifies PFM and provides the error.
-// It's okay if these errors are non-deterministic, because they will not be committed to state, only emitted as events.
-func newErrorAcknowledgement(err error) channeltypes.Acknowledgement {
+// ErrorAcknowledgementMessage is the text of every error acknowledgement that
+// packet-forward-middleware creates.
+const ErrorAcknowledgementMessage = "packet-forward-middleware error: forward failed"
+
+// newErrorAcknowledgement returns an error acknowledgement that identifies PFM.
+// ibc-go commits the hash of the acknowledgement, so it must be the same on
+// every node. Error text is not: it can hold source paths and
+// encoding/json messages that differ between builds and Go versions. The
+// acknowledgement therefore carries no error text; callers log err.
+func newErrorAcknowledgement(_ error) channeltypes.Acknowledgement {
 	return channeltypes.Acknowledgement{
 		Response: &channeltypes.Acknowledgement_Error{
-			Error: fmt.Sprintf("packet-forward-middleware error: %s", err.Error()),
+			Error: ErrorAcknowledgementMessage,
 		},
 	}
 }
