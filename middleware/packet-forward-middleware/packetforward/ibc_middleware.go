@@ -2,6 +2,7 @@ package packetforward
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -194,6 +195,12 @@ func (im IBCMiddleware) OnRecvPacket(
 	}
 
 	metadata := m.Forward
+	if metadata == nil {
+		// encoding/json matches struct fields without case, so a later key
+		// such as "Forward":null leaves no forward metadata.
+		logger.Error("packetForwardMiddleware OnRecvPacket forward metadata decodes to null")
+		return newErrorAcknowledgement(errors.New("forward metadata is null"))
+	}
 
 	goCtx := ctx.Context()
 	nonrefundable := getBoolFromAny(goCtx.Value(types.NonrefundableKey{}))
