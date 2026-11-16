@@ -76,6 +76,8 @@ func TestOnRecvPacket_ErrorAckIsFixed(t *testing.T) {
 	}
 }
 
+var relayerAddr = test.AccAddress()
+
 // forwarder runs packet-forward-middleware with mocks that accept any
 // receive and any transfer, and records the memo of each transfer it sends.
 type forwarder struct {
@@ -105,8 +107,13 @@ func newForwarder(t *testing.T) *forwarder {
 // the packet was forwarded, the memo of the forwarded packet.
 func (f *forwarder) recv(memo string) (ibcexported.Acknowledgement, string, bool) {
 	f.t.Helper()
+	return f.recvPacket(transferPacket(f.t, senderAddr, hostAddr, memo))
+}
+
+func (f *forwarder) recvPacket(packet channeltypes.Packet) (ibcexported.Acknowledgement, string, bool) {
+	f.t.Helper()
 	n := len(f.memos)
-	ack := f.setup.ForwardMiddleware.OnRecvPacket(f.setup.Initializer.Ctx, transferPacket(f.t, senderAddr, hostAddr, memo), test.AccAddress())
+	ack := f.setup.ForwardMiddleware.OnRecvPacket(f.setup.Initializer.Ctx, packet, relayerAddr)
 	if len(f.memos) == n {
 		return ack, "", false
 	}
@@ -117,16 +124,27 @@ func (f *forwarder) recv(memo string) (ibcexported.Acknowledgement, string, bool
 // memo, and returns the memo of the retried packet if it was retried.
 func (f *forwarder) timeout(memo string) (string, bool, error) {
 	f.t.Helper()
+	return f.timeoutPacket(f.forwardedPacket(memo))
+}
+
+// forwardedPacket returns the last packet forwarded on channel-0, with memo.
+func (f *forwarder) forwardedPacket(memo string) channeltypes.Packet {
+	f.t.Helper()
 	n := len(f.memos)
 	data, err := transfertypes.ModuleCdc.MarshalJSON(&transfertypes.FungibleTokenPacketData{
 		Denom: testDenom, Amount: testAmount, Sender: intermediateAddr, Receiver: destAddr, Memo: memo,
 	})
 	require.NoError(f.t, err)
-	packet := channeltypes.Packet{
+	return channeltypes.Packet{
 		Sequence: uint64(n), SourcePort: port, SourceChannel: channel,
 		DestinationPort: port, DestinationChannel: "channel-99", Data: data,
 	}
-	err = f.setup.ForwardMiddleware.OnTimeoutPacket(f.setup.Initializer.Ctx, packet, test.AccAddress())
+}
+
+func (f *forwarder) timeoutPacket(packet channeltypes.Packet) (string, bool, error) {
+	f.t.Helper()
+	n := len(f.memos)
+	err := f.setup.ForwardMiddleware.OnTimeoutPacket(f.setup.Initializer.Ctx, packet, relayerAddr)
 	if len(f.memos) == n {
 		return "", false, err
 	}
@@ -219,4 +237,50 @@ func TestRetryResendsMemoAsIs(t *testing.T) {
 			require.Equal(t, memo, retried)
 		})
 	}
+}
+
+// FuzzOnRecvPacketMemo checks, for arbitrary memo bytes, that
+// packet-forward-middleware does not panic, that a rejected memo gets the
+// fixed error acknowledgement, and that a forwarded packet that times out
+// is sent again with exactly its memo.
+func FuzzOnRecvPacketMemo(f *testing.F) {
+	for _, memo := range attackMemos(`,"retries":1,"timeout":"1ns"`, 2048) {
+		f.Add(memo)
+	}
+	for _, memo := range []string{
+		``, `{}`, `null`, `{"forward":null}`, `{"forward":{}}`, `{"forward":5}`, `{"forward":[]}`,
+		forwardMemo(`,"next":"null"`), forwardMemo(`,"next":"\"x\""`), forwardMemo(`,"next":{"a":1},"Next":"hello"`),
+		forwardMemo(`,"timeout":-9223372036854775808`), forwardMemo(`,"timeout":9223372036854775807`),
+		forwardMemo(`},"Forward":null,"forward":{"receiver":"r"`), `{"Forward":{"receiver":"r"},"forward":null}`,
+		"{\"forward\":{\"receiver\":\"\xff\",\"next\":\"\xfe\"}}",
+	} {
+		f.Add(memo)
+	}
+	f.Fuzz(func(t *testing.T, memo string) {
+		fw := newForwarder(t)
+		var ack ibcexported.Acknowledgement
+		var fwdMemo string
+		var forwarded bool
+		require.NotPanics(t, func() { ack, fwdMemo, forwarded = fw.recv(memo) })
+		if !forwarded {
+			require.NotNil(t, ack)
+			if !ack.Success() {
+				require.Equal(t, fixedErrorAck, string(ack.Acknowledgement()))
+			}
+			return
+		}
+		require.Nil(t, ack)
+		packet := fw.forwardedPacket(fwdMemo)
+		if _, err := fw.setup.Keepers.PacketForwardKeeper.TimeoutShouldRetry(fw.setup.Initializer.Ctx, packet); err != nil {
+			return // no retries left: the mocks do not cover the refund path
+		}
+		var retried string
+		var ok bool
+		var err error
+		require.NotPanics(t, func() { retried, ok, err = fw.timeoutPacket(packet) })
+		require.NoError(t, err)
+		if ok {
+			require.Equal(t, fwdMemo, retried)
+		}
+	})
 }
