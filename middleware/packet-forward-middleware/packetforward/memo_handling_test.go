@@ -3,6 +3,7 @@ package packetforward_test
 import (
 	"context"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8/test"
@@ -179,6 +180,43 @@ func TestForwardedMemoIsNextAsSent(t *testing.T) {
 			require.Nil(t, ack)
 			require.True(t, forwarded)
 			require.Equal(t, tc.want, memo)
+		})
+	}
+}
+
+// TestRetryResendsMemoAsIs checks that a forwarded packet that times out is
+// sent again with exactly the memo it had. The memo is not decoded, so a
+// memo that does not decode (for example from a packet forwarded by an
+// earlier version) cannot make every timeout fail.
+func TestRetryResendsMemoAsIs(t *testing.T) {
+	for name, memo := range map[string]string{
+		"empty":          ``,
+		"object":         `{"forward":{"receiver":"r2","port":"transfer","channel":"channel-1"}}`,
+		"spaces":         ` { "a" : 1 } `,
+		"html":           `{"a":"<&>"}`,
+		"json string":    `"x"`,
+		"null":           `null`,
+		"number":         `5`,
+		"not JSON":       `hello`,
+		"repeated keys":  `{"a":1,"a":2}`,
+		"3000 levels":    strings.Repeat(`{"a":`, 3000) + `1` + strings.Repeat(`}`, 3000),
+		"10001 levels":   strings.Repeat(`[`, 10001) + strings.Repeat(`]`, 10001),
+		"invalid escape": `{"a":"\x"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newForwarder(t)
+			ack, _, forwarded := f.recv(forwardMemo(`,"retries":2,"timeout":"1ns"`))
+			require.Nil(t, ack)
+			require.True(t, forwarded)
+			retried, ok, err := f.timeout(memo)
+			require.NoError(t, err)
+			require.True(t, ok, "the packet must be sent again")
+			require.Equal(t, memo, retried)
+			// And again, with the last retry.
+			retried, ok, err = f.timeout(retried)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, memo, retried)
 		})
 	}
 }
