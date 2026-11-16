@@ -29,6 +29,10 @@ type ForwardMetadata struct {
 
 type Duration time.Duration
 
+// maxDurationFloat is 2^63. A float64 v converts to an int64 with a result
+// that the Go specification defines only when -2^63 <= v < 2^63.
+const maxDurationFloat = float64(1 << 63)
+
 func (m *ForwardMetadata) Validate() error {
 	if m.Receiver == "" {
 		return fmt.Errorf("failed to validate metadata. receiver cannot be empty")
@@ -102,6 +106,12 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	}
 	switch value := v.(type) {
 	case float64:
+		// Go leaves the conversion of a float64 outside the int64 range
+		// implementation-defined, so it differs between CPU architectures.
+		// encoding/json never decodes NaN or an infinity.
+		if value < -maxDurationFloat || value >= maxDurationFloat {
+			return errors.New("invalid duration: number out of range")
+		}
 		*d = Duration(time.Duration(value))
 		return nil
 	case string:
