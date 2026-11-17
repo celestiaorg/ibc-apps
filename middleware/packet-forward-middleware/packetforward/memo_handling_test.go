@@ -242,7 +242,8 @@ func TestRetryResendsMemoAsIs(t *testing.T) {
 // FuzzOnRecvPacketMemo checks, for arbitrary memo bytes, that
 // packet-forward-middleware does not panic, that a rejected memo gets the
 // fixed error acknowledgement, that only a memo of at most ibc-go's memo
-// limit is forwarded, with a shorter memo, and that a forwarded packet that
+// limit (as the node decodes it) is forwarded, with a shorter memo, and that
+// a forwarded packet that
 // times out is sent again with exactly its memo.
 func FuzzOnRecvPacketMemo(f *testing.F) {
 	for _, memo := range attackMemos(`,"retries":1,"timeout":"1ns"`, 2048) {
@@ -256,15 +257,24 @@ func FuzzOnRecvPacketMemo(f *testing.F) {
 		"{\"forward\":{\"receiver\":\"\xff\",\"next\":\"\xfe\"}}",
 		padForwardMemo(maxMemoLength),
 		padForwardMemo(maxMemoLength + 1),
+		// Each invalid UTF-8 byte decodes to U+FFFD, 3 bytes, so the memo the
+		// node decodes, and the forwarded memo, are longer than these bytes.
+		forwardMemo(nextKey + `{"a":"` + strings.Repeat("\xff", 200) + `"}`),
 	} {
 		f.Add(memo)
 	}
 	f.Fuzz(func(t *testing.T, memo string) {
 		fw := newForwarder(t)
+		srcPacket := transferPacket(t, senderAddr, hostAddr, memo)
+		// Compare lengths with the memo the node decodes, not with the fuzz
+		// input: the JSON round trip turns each invalid UTF-8 byte into
+		// U+FFFD, which is 3 bytes.
+		var data transfertypes.FungibleTokenPacketData
+		require.NoError(t, transfertypes.ModuleCdc.UnmarshalJSON(srcPacket.Data, &data))
 		var ack ibcexported.Acknowledgement
 		var fwdMemo string
 		var forwarded bool
-		require.NotPanics(t, func() { ack, fwdMemo, forwarded = fw.recv(memo) })
+		require.NotPanics(t, func() { ack, fwdMemo, forwarded = fw.recvPacket(srcPacket) })
 		if !forwarded {
 			require.NotNil(t, ack)
 			if !ack.Success() {
@@ -273,8 +283,8 @@ func FuzzOnRecvPacketMemo(f *testing.F) {
 			return
 		}
 		require.Nil(t, ack)
-		require.LessOrEqual(t, len(memo), maxMemoLength)
-		require.Less(t, len(fwdMemo), len(memo))
+		require.LessOrEqual(t, len(data.Memo), maxMemoLength)
+		require.Less(t, len(fwdMemo), len(data.Memo))
 		packet := fw.forwardedPacket(fwdMemo)
 		if _, err := fw.setup.Keepers.PacketForwardKeeper.TimeoutShouldRetry(fw.setup.Initializer.Ctx, packet); err != nil {
 			return // no retries left: the mocks do not cover the refund path

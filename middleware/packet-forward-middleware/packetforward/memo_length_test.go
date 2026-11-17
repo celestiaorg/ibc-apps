@@ -49,8 +49,11 @@ func TestOnRecvPacket_MemoLengthCap(t *testing.T) {
 	for name, memo := range map[string]string{
 		"forward memo one byte over the limit": paddedForwardMemo(t, maxMemoLength+1),
 		"forward memo of 1 MiB":                paddedForwardMemo(t, 1<<20),
-		"invalid forward metadata over the limit": padTo(maxMemoLength+1, func(p string) string {
-			return `{"forward":{"receiver":"","port":"x","channel":"!"},"a":"` + p + `"}`
+		// Valid forward metadata with the padding in a key next to
+		// "forward": the forwarded memo would be short, so only the cap on
+		// the whole memo rejects it.
+		"forward memo over the limit, padded outside forward": padTo(maxMemoLength+1, func(p string) string {
+			return `{"forward":{"receiver":"` + destAddr + `","port":"transfer","channel":"channel-0"},"a":"` + p + `"}`
 		}),
 	} {
 		t.Run(name, func(t *testing.T) {
