@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iancoleman/orderedmap"
-
 	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
 )
 
@@ -22,12 +20,15 @@ type ForwardMetadata struct {
 	Timeout  Duration `json:"timeout,omitempty"`
 	Retries  *uint8   `json:"retries,omitempty"`
 
-	// Using JSONObject so that objects for next property will not be mutated by golang's lexicographic key sort on map keys during Marshal.
-	// Supports primitives for Unmarshal/Marshal so that an escaped JSON-marshaled string is also valid.
+	// Next is the memo of the forwarded packet, kept as bytes (see JSONObject).
 	Next *JSONObject `json:"next,omitempty"`
 }
 
 type Duration time.Duration
+
+// maxDurationFloat is 2^63. A float64 v converts to an int64 with a result
+// that the Go specification defines only when -2^63 <= v < 2^63.
+const maxDurationFloat = float64(1 << 63)
 
 func (m *ForwardMetadata) Validate() error {
 	if m.Receiver == "" {
@@ -39,56 +40,52 @@ func (m *ForwardMetadata) Validate() error {
 	if err := host.ChannelIdentifierValidator(m.Channel); err != nil {
 		return fmt.Errorf("failed to validate metadata: %w", err)
 	}
+	if m.Next != nil && !json.Valid(m.Next.memo) {
+		return fmt.Errorf("failed to validate metadata: next is not JSON")
+	}
 
 	return nil
 }
 
-// JSONObject is a wrapper type to allow either a primitive type or a JSON object.
-// In the case the value is a JSON object, OrderedMap type is used so that key order
-// is retained across Unmarshal/Marshal.
+// JSONObject holds the value of forward.next, which is the memo of the
+// forwarded packet. A JSON string is kept as its unquoted content, so that an
+// escaped JSON-marshaled string is also valid. Any other value is kept as the
+// sender's bytes. The memo is never decoded and encoded again, so the work is
+// linear in its length, and key order, whitespace and escapes stay as sent.
 type JSONObject struct {
-	obj        bool
-	primitive  []byte
-	orderedMap orderedmap.OrderedMap
+	memo []byte
 }
 
-// NewJSONObject is a constructor used for tests.
-// The usage of JSONObject in the middleware is only json Marshal/Unmarshal
-func NewJSONObject(object bool, primitive []byte, orderedMap orderedmap.OrderedMap) *JSONObject {
-	return &JSONObject{
-		obj:        object,
-		primitive:  primitive,
-		orderedMap: orderedMap,
-	}
+// NewJSONObject returns a JSONObject that holds memo, the memo of the
+// forwarded packet.
+func NewJSONObject(memo []byte) *JSONObject {
+	return &JSONObject{memo: memo}
+}
+
+// Memo returns the memo of the forwarded packet.
+func (o *JSONObject) Memo() string {
+	return string(o.memo)
 }
 
 // UnmarshalJSON overrides the default json.Unmarshal behavior
 func (o *JSONObject) UnmarshalJSON(b []byte) error {
-	if err := o.orderedMap.UnmarshalJSON(b); err != nil {
-		// If ordered map unmarshal fails, this is a primitive value
-		o.obj = false
-		// Attempt to unmarshal as string, this removes extra JSON escaping
-		var primitiveStr string
-		if err := json.Unmarshal(b, &primitiveStr); err != nil {
-			o.primitive = b
-			return nil
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
 		}
-		o.primitive = []byte(primitiveStr)
+		o.memo = []byte(s)
 		return nil
 	}
-	// This is a JSON object, now stored as an ordered map to retain key order.
-	o.obj = true
+	// b is only valid during the call, so copy it.
+	o.memo = append([]byte(nil), b...)
 	return nil
 }
 
-// MarshalJSON overrides the default json.Marshal behavior
+// MarshalJSON overrides the default json.Marshal behavior. It returns the
+// memo, which fails to encode if the memo is not JSON.
 func (o JSONObject) MarshalJSON() ([]byte, error) {
-	if o.obj {
-		// non-primitive, return marshaled ordered map.
-		return o.orderedMap.MarshalJSON()
-	}
-	// primitive, return raw bytes.
-	return o.primitive, nil
+	return o.memo, nil
 }
 
 func (d Duration) MarshalJSON() ([]byte, error) {
@@ -102,6 +99,12 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	}
 	switch value := v.(type) {
 	case float64:
+		// Go leaves the conversion of a float64 outside the int64 range
+		// implementation-defined, so it differs between CPU architectures.
+		// encoding/json never decodes NaN or an infinity.
+		if value < -maxDurationFloat || value >= maxDurationFloat {
+			return errors.New("invalid duration: number out of range")
+		}
 		*d = Duration(time.Duration(value))
 		return nil
 	case string:

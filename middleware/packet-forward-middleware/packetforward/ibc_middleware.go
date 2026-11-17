@@ -2,7 +2,9 @@ package packetforward
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,14 +148,42 @@ func GetReceiver(channel string, originalSender string) (string, error) {
 	return sdk.Bech32ifyAddressBytes(bech32Prefix, sender)
 }
 
-// newErrorAcknowledgement returns an error that identifies PFM and provides the error.
-// It's okay if these errors are non-deterministic, because they will not be committed to state, only emitted as events.
-func newErrorAcknowledgement(err error) channeltypes.Acknowledgement {
+// ErrorAcknowledgementMessage is the text of every error acknowledgement that
+// packet-forward-middleware creates.
+const ErrorAcknowledgementMessage = "packet-forward-middleware error: forward failed"
+
+// newErrorAcknowledgement returns an error acknowledgement that identifies PFM
+// and emits a packet_forward_error event with the cause.
+// ibc-go commits the hash of the acknowledgement, so it must be the same on
+// every node. Error text is not: it can hold source paths and
+// encoding/json messages that differ between builds and Go versions. The
+// acknowledgement therefore carries no error text. The event carries it,
+// because events are not part of any consensus hash and do not use gas.
+// dstPort, dstChannel and sequence identify the packet that the
+// acknowledgement is for, as ibc-go names them in its packet events.
+func newErrorAcknowledgement(ctx sdk.Context, dstPort, dstChannel string, sequence uint64, err error) channeltypes.Acknowledgement {
+	var cause string
+	if err != nil {
+		cause = err.Error()
+	}
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeForwardError,
+		sdk.NewAttribute(types.AttributeKeyError, cause),
+		sdk.NewAttribute(channeltypes.AttributeKeySequence, strconv.FormatUint(sequence, 10)),
+		sdk.NewAttribute(channeltypes.AttributeKeyDstPort, dstPort),
+		sdk.NewAttribute(channeltypes.AttributeKeyDstChannel, dstChannel),
+	))
 	return channeltypes.Acknowledgement{
 		Response: &channeltypes.Acknowledgement_Error{
-			Error: fmt.Sprintf("packet-forward-middleware error: %s", err.Error()),
+			Error: ErrorAcknowledgementMessage,
 		},
 	}
+}
+
+// recvErrorAcknowledgement returns the error acknowledgement for a packet
+// received by OnRecvPacket.
+func recvErrorAcknowledgement(ctx sdk.Context, packet channeltypes.Packet, err error) channeltypes.Acknowledgement {
+	return newErrorAcknowledgement(ctx, packet.DestinationPort, packet.DestinationChannel, packet.Sequence, err)
 }
 
 // OnRecvPacket checks the memo field on this packet and if the metadata inside's root key indicates this packet
@@ -186,14 +216,31 @@ func (im IBCMiddleware) OnRecvPacket(
 		logger.Debug("packetForwardMiddleware OnRecvPacket forward metadata does not exist")
 		return im.app.OnRecvPacket(ctx, packet, relayer)
 	}
+	// Reject a forward memo longer than ibc-go's limit on the memo of a
+	// MsgTransfer, before any other work and before funds move. ibc-go
+	// refuses a MsgTransfer with a longer memo, so no ibc-go sender is
+	// affected, and the work per forwarded packet stays bounded by a protocol
+	// constant. The forwarded memo is part of this memo, so it is shorter.
+	// Memos that are not forward memos go to the transfer app as before.
+	if len(data.Memo) > transfertypes.MaximumMemoLength {
+		logger.Error("packetForwardMiddleware OnRecvPacket forward memo is too long",
+			"length", len(data.Memo), "max", transfertypes.MaximumMemoLength)
+		return recvErrorAcknowledgement(ctx, packet, fmt.Errorf("forward memo length %d exceeds %d bytes", len(data.Memo), transfertypes.MaximumMemoLength))
+	}
 	m := &types.PacketMetadata{}
 	err = json.Unmarshal([]byte(data.Memo), m)
 	if err != nil {
 		logger.Error("packetForwardMiddleware OnRecvPacket error parsing forward metadata", "error", err)
-		return newErrorAcknowledgement(fmt.Errorf("error parsing forward metadata: %w", err))
+		return recvErrorAcknowledgement(ctx, packet, fmt.Errorf("error parsing forward metadata: %w", err))
 	}
 
 	metadata := m.Forward
+	if metadata == nil {
+		// encoding/json matches struct fields without case, so a later key
+		// such as "Forward":null leaves no forward metadata.
+		logger.Error("packetForwardMiddleware OnRecvPacket forward metadata decodes to null")
+		return recvErrorAcknowledgement(ctx, packet, errors.New("forward metadata is null"))
+	}
 
 	goCtx := ctx.Context()
 	nonrefundable := getBoolFromAny(goCtx.Value(types.NonrefundableKey{}))
@@ -201,19 +248,19 @@ func (im IBCMiddleware) OnRecvPacket(
 
 	if err := metadata.Validate(); err != nil {
 		logger.Error("packetForwardMiddleware OnRecvPacket forward metadata is invalid", "error", err)
-		return newErrorAcknowledgement(err)
+		return recvErrorAcknowledgement(ctx, packet, err)
 	}
 
 	// override the receiver so that senders cannot move funds through arbitrary addresses.
 	overrideReceiver, err := GetReceiver(packet.DestinationChannel, data.Sender)
 	if err != nil {
 		logger.Error("packetForwardMiddleware OnRecvPacket failed to construct override receiver", "error", err)
-		return newErrorAcknowledgement(fmt.Errorf("failed to construct override receiver: %w", err))
+		return recvErrorAcknowledgement(ctx, packet, fmt.Errorf("failed to construct override receiver: %w", err))
 	}
 
 	if err := im.receiveFunds(ctx, packet, data, overrideReceiver, relayer); err != nil {
 		logger.Error("packetForwardMiddleware OnRecvPacket error receiving packet", "error", err)
-		return newErrorAcknowledgement(fmt.Errorf("error receiving packet: %w", err))
+		return recvErrorAcknowledgement(ctx, packet, fmt.Errorf("error receiving packet: %w", err))
 	}
 
 	// if this packet's token denom is already the base denom for some native token on this chain,
@@ -230,7 +277,7 @@ func (im IBCMiddleware) OnRecvPacket(
 	amountInt, ok := sdkmath.NewIntFromString(data.Amount)
 	if !ok {
 		logger.Error("packetForwardMiddleware OnRecvPacket error parsing amount for forward", "amount", data.Amount)
-		return newErrorAcknowledgement(fmt.Errorf("error parsing amount for forward: %s", data.Amount))
+		return recvErrorAcknowledgement(ctx, packet, fmt.Errorf("error parsing amount for forward: %s", data.Amount))
 	}
 
 	token := sdk.NewCoin(denomOnThisChain, amountInt)
@@ -251,7 +298,7 @@ func (im IBCMiddleware) OnRecvPacket(
 	err = im.keeper.ForwardTransferPacket(ctx, nil, packet, data.Sender, overrideReceiver, metadata, token, retries, timeout, []metrics.Label{}, nonrefundable)
 	if err != nil {
 		logger.Error("packetForwardMiddleware OnRecvPacket error forwarding packet", "error", err)
-		return newErrorAcknowledgement(err)
+		return recvErrorAcknowledgement(ctx, packet, err)
 	}
 
 	// returning nil ack will prevent WriteAcknowledgement from occurring for forwarded packet.
@@ -365,7 +412,8 @@ func (im IBCMiddleware) OnTimeoutPacket(ctx sdk.Context, packet channeltypes.Pac
 		if err != nil {
 			// this is a forwarded packet, so override handling to avoid refund from being processed on this chain.
 			// WriteAcknowledgement with proxied ack to return success/fail to previous chain.
-			return im.keeper.WriteAcknowledgementForForwardedPacket(ctx, packet, data, inFlightPacket, newErrorAcknowledgement(err))
+			return im.keeper.WriteAcknowledgementForForwardedPacket(ctx, packet, data, inFlightPacket,
+				newErrorAcknowledgement(ctx, inFlightPacket.RefundPortId, inFlightPacket.RefundChannelId, inFlightPacket.RefundSequence, err))
 		}
 		// timeout should be retried. In order to do that, we need to handle this timeout to refund on this chain first.
 		if err := im.app.OnTimeoutPacket(ctx, packet, relayer); err != nil {
