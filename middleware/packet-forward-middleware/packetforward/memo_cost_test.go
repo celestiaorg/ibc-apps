@@ -49,7 +49,7 @@ func nested(depth int, inner string) string {
 // packet-forward-middleware memo handling, each with the extra forward
 // fields given, at most n bytes long unless stated.
 func attackMemos(fields string, n int) map[string]string {
-	pre := `{"forward":{"receiver":"` + destAddr + `","port":"transfer","channel":"channel-0"` + fields
+	pre := forwardReceiverPrefix + destAddr + `","port":"transfer","channel":"channel-0"` + fields
 	var keys strings.Builder
 	for i := 0; i < 2000; i++ {
 		if i > 0 {

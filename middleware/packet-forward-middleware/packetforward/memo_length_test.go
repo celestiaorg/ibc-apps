@@ -53,7 +53,7 @@ func TestOnRecvPacket_MemoLengthCap(t *testing.T) {
 		// "forward": the forwarded memo would be short, so only the cap on
 		// the whole memo rejects it.
 		"forward memo over the limit, padded outside forward": padTo(maxMemoLength+1, func(p string) string {
-			return `{"forward":{"receiver":"` + destAddr + `","port":"transfer","channel":"channel-0"},"a":"` + p + `"}`
+			return forwardReceiverPrefix + destAddr + `","port":"transfer","channel":"channel-0"},"a":"` + p + `"}`
 		}),
 	} {
 		t.Run(name, func(t *testing.T) {

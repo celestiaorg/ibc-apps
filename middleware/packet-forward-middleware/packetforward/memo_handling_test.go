@@ -153,8 +153,11 @@ func (f *forwarder) timeoutPacket(packet channeltypes.Packet) (string, bool, err
 
 // forwardMemo returns a forward memo to channel-0 with the given extra
 // fields of the forward object (each starting with a comma).
+// forwardReceiverPrefix starts a forward memo; the receiver follows.
+const forwardReceiverPrefix = `{"forward":{"receiver":"`
+
 func forwardMemo(fields string) string {
-	return `{"forward":{"receiver":"` + destAddr + `","port":"transfer","channel":"channel-0"` + fields + `}}`
+	return forwardReceiverPrefix + destAddr + `","port":"transfer","channel":"channel-0"` + fields + `}}`
 }
 
 // TestForwardedMemoIsNextAsSent checks the memo of the forwarded packet for
