@@ -49,6 +49,8 @@ func NewTestSetup(t *testing.T, ctl *gomock.Controller) *Setup {
 
 		Mocks: &testMocks{
 			TransferKeeperMock: transferKeeperMock,
+			ChannelKeeperMock:  channelKeeperMock,
+			BankKeeperMock:     bankKeeperMock,
 			IBCModuleMock:      ibcModuleMock,
 			ICS4WrapperMock:    ics4WrapperMock,
 		},
@@ -72,6 +74,8 @@ type testKeepers struct {
 
 type testMocks struct {
 	TransferKeeperMock *mock.MockTransferKeeper
+	ChannelKeeperMock  *mock.MockChannelKeeper
+	BankKeeperMock     *mock.MockBankKeeper
 	IBCModuleMock      *mock.MockIBCModule
 	ICS4WrapperMock    *mock.MockICS4Wrapper
 }

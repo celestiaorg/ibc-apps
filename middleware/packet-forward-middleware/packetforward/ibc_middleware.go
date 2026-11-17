@@ -194,6 +194,17 @@ func (im IBCMiddleware) OnRecvPacket(
 		logger.Debug("packetForwardMiddleware OnRecvPacket forward metadata does not exist")
 		return im.app.OnRecvPacket(ctx, packet, relayer)
 	}
+	// Reject a forward memo longer than ibc-go's limit on the memo of a
+	// MsgTransfer, before any other work and before funds move. ibc-go
+	// refuses a MsgTransfer with a longer memo, so no ibc-go sender is
+	// affected, and the work per forwarded packet stays bounded by a protocol
+	// constant. The forwarded memo is part of this memo, so it is shorter.
+	// Memos that are not forward memos go to the transfer app as before.
+	if len(data.Memo) > transfertypes.MaximumMemoLength {
+		logger.Error("packetForwardMiddleware OnRecvPacket forward memo is too long",
+			"length", len(data.Memo), "max", transfertypes.MaximumMemoLength)
+		return newErrorAcknowledgement(fmt.Errorf("forward memo length %d exceeds %d bytes", len(data.Memo), transfertypes.MaximumMemoLength))
+	}
 	m := &types.PacketMetadata{}
 	err = json.Unmarshal([]byte(data.Memo), m)
 	if err != nil {

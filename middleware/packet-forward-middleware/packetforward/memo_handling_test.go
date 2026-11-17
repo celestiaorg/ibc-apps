@@ -38,9 +38,9 @@ func recvWithoutForwarding(t *testing.T, memo string) ibcexported.Acknowledgemen
 func TestOnRecvPacket_ForwardDecodesToNil(t *testing.T) {
 	fwd := `{"receiver":"` + destAddr + `","port":"transfer","channel":"channel-0"}`
 	for _, memo := range []string{
-		`{"forward":` + fwd + `,"Forward":null}`,
-		`{"forward":` + fwd + `,"FORWARD":null}`,
-		`{"forward":` + fwd + `,"Forward":null}`,
+		forwardKey + fwd + `,"Forward":null}`,
+		forwardKey + fwd + `,"FORWARD":null}`,
+		forwardKey + fwd + `,"Forward":null}`,
 		`{"Forward":null,"forward":` + fwd + `,"fORWARD":null}`,
 	} {
 		ack := recvWithoutForwarding(t, memo)
@@ -189,7 +189,7 @@ func TestForwardedMemoIsNextAsSent(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newForwarder(t)
-			ack, memo, forwarded := f.recv(forwardMemo(`,"next":` + tc.next))
+			ack, memo, forwarded := f.recv(forwardMemo(nextKey + tc.next))
 			if tc.fail {
 				require.False(t, forwarded)
 				require.Equal(t, fixedErrorAck, string(ack.Acknowledgement()))
@@ -241,18 +241,21 @@ func TestRetryResendsMemoAsIs(t *testing.T) {
 
 // FuzzOnRecvPacketMemo checks, for arbitrary memo bytes, that
 // packet-forward-middleware does not panic, that a rejected memo gets the
-// fixed error acknowledgement, and that a forwarded packet that times out
-// is sent again with exactly its memo.
+// fixed error acknowledgement, that only a memo of at most ibc-go's memo
+// limit is forwarded, with a shorter memo, and that a forwarded packet that
+// times out is sent again with exactly its memo.
 func FuzzOnRecvPacketMemo(f *testing.F) {
 	for _, memo := range attackMemos(`,"retries":1,"timeout":"1ns"`, 2048) {
 		f.Add(memo)
 	}
 	for _, memo := range []string{
 		``, `{}`, `null`, `{"forward":null}`, `{"forward":{}}`, `{"forward":5}`, `{"forward":[]}`,
-		forwardMemo(`,"next":"null"`), forwardMemo(`,"next":"\"x\""`), forwardMemo(`,"next":{"a":1},"Next":"hello"`),
+		forwardMemo(nextKey + `"null"`), forwardMemo(nextKey + `"\"x\""`), forwardMemo(nextKey + `{"a":1},"Next":"hello"`),
 		forwardMemo(`,"timeout":-9223372036854775808`), forwardMemo(`,"timeout":9223372036854775807`),
 		forwardMemo(`},"Forward":null,"forward":{"receiver":"r"`), `{"Forward":{"receiver":"r"},"forward":null}`,
 		"{\"forward\":{\"receiver\":\"\xff\",\"next\":\"\xfe\"}}",
+		padForwardMemo(maxMemoLength),
+		padForwardMemo(maxMemoLength + 1),
 	} {
 		f.Add(memo)
 	}
@@ -270,6 +273,8 @@ func FuzzOnRecvPacketMemo(f *testing.F) {
 			return
 		}
 		require.Nil(t, ack)
+		require.LessOrEqual(t, len(memo), maxMemoLength)
+		require.Less(t, len(fwdMemo), len(memo))
 		packet := fw.forwardedPacket(fwdMemo)
 		if _, err := fw.setup.Keepers.PacketForwardKeeper.TimeoutShouldRetry(fw.setup.Initializer.Ctx, packet); err != nil {
 			return // no retries left: the mocks do not cover the refund path
