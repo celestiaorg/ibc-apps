@@ -9,6 +9,7 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
@@ -23,8 +24,10 @@ func TestNewErrorAcknowledgementIsFixed(t *testing.T) {
 		errorsmod.Wrapf(sdkerrors.ErrInsufficientFunds, "/home/builder/go/pkg/mod/x.go:41"),
 		nil,
 	} {
-		ack := newErrorAcknowledgement(err)
+		ctx := sdk.Context{}.WithEventManager(sdk.NewEventManager())
+		ack := newErrorAcknowledgement(ctx, "transfer", "channel-0", 1, err)
 		require.False(t, ack.Success())
 		require.Equal(t, want, string(ack.Acknowledgement()))
+		require.Len(t, ctx.EventManager().Events(), 1)
 	}
 }
