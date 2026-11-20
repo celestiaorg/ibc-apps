@@ -1,88 +1,41 @@
-# ibc-apps
+# celestiaorg/ibc-apps
 
-> [!WARNING]
-> **Deprecated.** The modules in this repository have been consolidated into [cosmos/ibc-go](https://github.com/cosmos/ibc-go). This repository is no longer actively maintained and will be archived on **2026-08-03**. Please migrate to the canonical implementations in ibc-go.
+This is Celestia's fork of [cosmos/ibc-apps](https://github.com/cosmos/ibc-apps). [celestia-app](https://github.com/celestiaorg/celestia-app) uses its packet-forward-middleware (PFM) through a `replace` directive in its `go.mod`.
 
-![IBC-APPS Header](ibc-apps.png)
+For general documentation of the apps and middleware in this repository, see the upstream repository.
 
-IBC applications and middleware for Cosmos SDK blockchains
+## Why fork?
 
-🌌 Why have an ibc-apps repo?
-================================
+- celestia-app uses ibc-go v8 and PFM v8. Upstream has deprecated this repository and moved PFM into ibc-go v10 and later, so it does not ship new fixes to PFM v8.
+- Celestia needs PFM to give the same result on every node and to do a bounded amount of work per packet. The fixes for that change state transitions, so Celestia releases them as fork versions that celestia-app activates at a coordinated network upgrade.
 
-Early IBC work started in the [ibc-go](https://github.com/cosmos/ibc-go) repo. As the repo grew, the need arose to parallelize the work among many teams.
+## Maintained branches
 
-The ibc-apps repo is meant to be an easily discoverable, navigable, central place for modules and middleware.
+| Branch | Tags | Used by |
+|--------|------|---------|
+| [`celestia/pfm-v8.2.x`](https://github.com/celestiaorg/ibc-apps/tree/celestia/pfm-v8.2.x) | `middleware/packet-forward-middleware/v8.2.1-celestia` | celestia-app `main` |
+| `main` | none | Follows upstream `main`. Only CI and docs changes. |
 
-🌌🌌 Who's it for?
-===================
+Earlier celestia-app versions use upstream PFM (`v6.1.2` or `v8.2.0`) without this fork.
 
-IBC-Apps is for:
-- _Core **ibc-go** contributors_; it frees them from having to maintain IBC Apps,
+## Differences from upstream
 
-- _Publishers of **ibc apps**_, so their apps can be easily found, and
+### `celestia/pfm-v8.2.x`
 
-- _Everyone who uses IBC_ and wants to benefit from the full range of its capabilities.
+Based on upstream `middleware/packet-forward-middleware/v8.2.0`. All changes are in [#3](https://github.com/celestiaorg/ibc-apps/pull/3) and are consensus-breaking.
 
+- **Deterministic timeouts**: a numeric timeout outside the int64 range is rejected. Before, the float-to-int conversion gave different results on amd64 and arm64.
+- **Deterministic error acknowledgements**: every PFM error acknowledgement has the same fixed text. The Go error text goes in a `packet_forward_error` event instead.
+- **Memos forwarded as sent**: `forward.next` and retried memos are passed on as bytes, not decoded and encoded again.
+- **Bounded memos**: a forward memo longer than 32768 bytes (the ibc-go `MsgTransfer` memo limit) gets an error acknowledgement before any work is done.
+- **No nil dereference**: forward metadata that decodes to null gets an error acknowledgement instead of a panic.
 
-🌌🌌🌌 What is it?
-==================
+### `main`
 
-### What is IBC?
+- CI fixes and a review request workflow. No Go code changes.
 
-The Inter-Blockchain Communication Protocol (IBC) is a protocol to handle the authentication and transport of data between two blockchains. IBC requires a minimal set of functions, specified in the [Interchain Standards](https://github.com/cosmos/ibc/tree/main/spec/ics-001-ics-standard) (ICS). These specifications do not limit the network topology or consensus algorithm, so IBC can be used with a wide range of blockchains or state machines. The IBC protocol provides a permissionless way for relaying data packets between blockchains, unlike most trusted bridging technologies. The security of IBC reduces to the security of the participating chains.
+## Contributing
 
-IBC solves a widespread problem: cross-chain communication. This problem exists on public blockchains when exchanges wish to perform swaps. The problem arises early in the case of application-specific blockchains, where every asset is likely to emerge from its own purpose-built chain. Cross-chain communication is also a challenge in the world of private blockchains, in cases where communication with a public chain or other private chains is desirable.
-
-Cross-chain communication between application-specific blockchains in Cosmos creates the potential for high horizontal scalability with transaction finality. These design features provide convincing solutions to well-known problems that plague other platforms, such as transaction costs, network capacity, and transaction confirmation finality.
-
-
-### What is an IBC App?
-
-IBC apps can be split into two categories - modules and middleware.
-
-IBC Modules are self-contained applications that enable packets to be sent to and received from other IBC-enabled chains.  IBC application developers do not need to concern themselves with the low-level details of clients, connections, and proof verification.
-
-IBC Middleware are self-contained modules that sit between core IBC and an underlying IBC application.  This allows developers to customize lower-level packet handling.  Multiple middleware modules can be chained together.
-
-
-🌌🌌🌌🌌 How to Use this repo
-=============================
-
-If you'd like to include software in this repo, please see [contributing](CONTRIBUTING.md).
-
-🌌🌌🌌🌌🌌 Bonus Content
-=============================
-
-## Maintained Branches
-
-|                          **Branch Name**                         | **IBC-Go** |
-|:----------------------------------------------------------------:|:----------:|
-|            [main](https://github.com/cosmos/ibc-apps)            |     v8     |
-| [release/v7](https://github.com/cosmos/ibc-apps/tree/release/v7) |     v7     |
-| [release/v6](https://github.com/cosmos/ibc-apps/tree/release/v6) |     v6     |
-
-
-## List of Apps
-
-| Name | Type | Example | Stakeholders | Description |
-| ---- | ---- | ------- | ------------ | ----------- |
-| [Async Interchain Query](./modules/async-icq/) | Module | Link | [Strangelove](https://strange.love/) | Interchain Queries enable blockchains to query the state of an account on another chain without the need for ICA auth. |
-| [IBC Hooks](./modules/ibc-hooks/) | Module | [Link](./modules/ibc-hooks/simapp/app.go) | [Osmosis](https://github.com/osmosis-labs) | The IBC hooks module is an IBC middleware that enables ICS-20 token transfers to initiate contract calls. |
-| [Packet Forward Middleware](./middleware/packet-forward-middleware) | Middleware | Link | [Strangelove](https://strange.love/) | Middleware for forwarding IBC packets. |
-| [Rate Limit](./modules/rate-limiting/) | Module | Link | [Stride](https://github.com/Stride-Labs/) | Module for rate limiting ingress/egress of packets. |
-
-## Ecosystem Apps
-
-Modules and middleware developed by other awesome teams in the ecosystem:
-
-| Name | Type | Stakeholders | Description |
-| ---- | ---- | ------------ | ----------- |
-| [Interchain KV Queries](https://github.com/ingenuity-build/interchain-queries) | Module | [Ingenuity](https://github.com/ingenuity-build) | An application that enables on chain querying of another IBC enabled chains state without the need for the chain being queried to implement the application. |
-| [query](https://github.com/defund-labs/interquery) | Module | [Defund Labs](https://github.com/defund-labs) | An application that enables on chain querying of another IBC enabled chains state without the need for the chain being queried to implement the application. Similar to the interchain-queries application in the row above but without callbacks. |
-| [NFT Transfer (ICS 721)](https://github.com/bianjieai/nft-transfer) | Module | [Bianjieai](https://github.com/bianjieai) | An application that enables cross chain NFT transfer. |
-| <!-- markdown-link-check-disable-line --> [CosmWasm NFT Transfer (ICS 721)](https://github.com/public-awesome/cw-ics721) | Wasm Contract | [Public Awesome (Stargaze)](https://github.com/public-awesome), [Ark Protocol](https://x.com/ArkProtocol) | An application that enables cross chain NFT transfer. CosmWasm implementation of the above, written in Rust. |
-| [recovery](https://github.com/evmos/evmos/tree/v15.0.0/x/recovery) | Middleware | [Evmos](https://github.com/evmos) | Middleware enabling the recovery of tokens sent to unsupported addresses. |
-| [cw-ibc-rate-limit](https://github.com/osmosis-labs/osmosis/tree/main/x/ibc-rate-limit) | Middleware | [Osmosis Labs](https://github.com/osmosis-labs) | Middleware that limits the in or out flow of an asset in a certain time period to minimise the risks of cross chain token transfers. This is implemented as a middleware wrapping ICS20 with the rate limiting logic implemented by CosmWasm contracts. |
-| [Interchain Atomic Swap](https://github.com/sideprotocol/mesh-liquidity-wasm/tree/v0.1.0/contracts/ics100) | Wasm Contract | [Side Labs](https://github.com/sideprotocol) | An application that facilitates inter-blockchain peer-to-peer asset swaps. |
-| [Interchain Liquidity](https://github.com/sideprotocol/ibcswap-wasm/tree/main/contracts/ics101) | Wasm Contract | [Side Labs](https://github.com/sideprotocol) | An application that splits the state of a weighted liquidity pool between two chains, enabling inter-blockchain automated asset swaps. |
+- Open PRs against the branch that celestia-app uses.
+- PR titles use [conventional commits](https://www.conventionalcommits.org/) with a review level tag (`[low]`, `[medium]` or `[high]`). Add `!` for a consensus-breaking change.
+- A consensus-breaking change needs a new fork version. Do not add it to a tag that a released celestia-app version already uses.
