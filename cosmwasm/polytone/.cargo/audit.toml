@@ -16,4 +16,20 @@ ignore = [
     "RUSTSEC-2026-0099",
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0104",
+    # rustls 0.21.x, rustls-webpki 0.101.x and h2 0.3.x: client session
+    # Debug leak, key-share downgrade, distrusted intermediates, unbounded
+    # empty DATA frames. Via cw-orch-daemon -> reqwest 0.11 / tonic 0.10.
+    # Only in cw-orch scripting/testing tooling, not in deployed contracts.
+    # Fixed only in new major lines (rustls 0.23, webpki 0.103, h2 0.4);
+    # needs a cw-orch upgrade, which needs cosmwasm-std 2.x.
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0349",
+    "RUSTSEC-2026-0382",
+    "RUSTSEC-2026-0258",
+    # crypto-bigint 0.4.x and 0.5.x timing variability. Via
+    # elliptic-curve -> k256/ecdsa in cosmwasm-crypto (not built for wasm32)
+    # and cw-multi-test (dev-dependency), which only verify signatures on
+    # public data. Fixed only in crypto-bigint 0.7.6; elliptic-curve 0.12
+    # and 0.13 depend on crypto-bigint 0.4 and 0.5, so no upgrade path exists.
+    "RUSTSEC-2026-0387",
 ]
