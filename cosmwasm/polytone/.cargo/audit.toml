@@ -28,8 +28,12 @@ ignore = [
     "RUSTSEC-2026-0258",
     # crypto-bigint 0.4.x and 0.5.x timing variability. Via
     # elliptic-curve -> k256/ecdsa in cosmwasm-crypto (not built for wasm32)
-    # and cw-multi-test (dev-dependency), which only verify signatures on
-    # public data. Fixed only in crypto-bigint 0.7.6; elliptic-curve 0.12
-    # and 0.13 depend on crypto-bigint 0.4 and 0.5, so no upgrade path exists.
+    # and cw-multi-test (dev-dependency), which verify signatures on public
+    # data, and in cw-orch-daemon -> cosmrs, which signs deployment txs with
+    # a private key. That signer path is a real exposure for operators who
+    # deploy with cw-orch-daemon, but it is not in the deployed contracts.
+    # Fixed only in crypto-bigint 0.7.6; elliptic-curve 0.12 and 0.13
+    # depend on crypto-bigint 0.4 and 0.5, so no upgrade path exists yet.
+    # Remove this ignore when cosmrs/k256 move to a fixed crypto-bigint.
     "RUSTSEC-2026-0387",
 ]
