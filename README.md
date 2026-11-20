@@ -67,9 +67,9 @@ If you'd like to include software in this repo, please see [contributing](CONTRI
 
 | Name | Type | Example | Stakeholders | Description |
 | ---- | ---- | ------- | ------------ | ----------- |
-| [Async Interchain Query](./modules/async-icq/) | Module | Link | [Strangelove](https://github.com/strangelove-ventures/) | Interchain Queries enable blockchains to query the state of an account on another chain without the need for ICA auth. |
+| [Async Interchain Query](./modules/async-icq/) | Module | Link | [Strangelove](https://strange.love/) | Interchain Queries enable blockchains to query the state of an account on another chain without the need for ICA auth. |
 | [IBC Hooks](./modules/ibc-hooks/) | Module | [Link](./modules/ibc-hooks/simapp/app.go) | [Osmosis](https://github.com/osmosis-labs) | The IBC hooks module is an IBC middleware that enables ICS-20 token transfers to initiate contract calls. |
-| [Packet Forward Middleware](./middleware/packet-forward-middleware) | Middleware | Link | [Strangelove](https://github.com/strangelove-ventures/) | Middleware for forwarding IBC packets. |
+| [Packet Forward Middleware](./middleware/packet-forward-middleware) | Middleware | Link | [Strangelove](https://strange.love/) | Middleware for forwarding IBC packets. |
 | [Rate Limit](./modules/rate-limiting/) | Module | Link | [Stride](https://github.com/Stride-Labs/) | Module for rate limiting ingress/egress of packets. |
 
 ## Ecosystem Apps

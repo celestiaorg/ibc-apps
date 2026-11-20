@@ -14,7 +14,7 @@ Every app should be its own module in it's own directory.
 
 ## How can I contribute?
 
-All contributions should abide by the [Code of Conduct](./CODE_OF_CONDUCT.md)
+All contributions should abide by the [Code of Conduct](https://github.com/cosmos/ibc-go/blob/main/CODE_OF_CONDUCT.md)
 
 For issues, create a Github issue and include steps to reproduce, expected behavior, and the version affected.
 
@@ -28,7 +28,7 @@ For modules, ensure full test coverage and compatibility with the main branch.
 - [ ] After approval, write privileges will be granted to a member of an external team.
 - [ ] Merging PRs will require approval from more than one team
 
-Privileges will be revoked in case of failure to comply with the [Code of Conduct](./CODE_OF_CONDUCT.md)
+Privileges will be revoked in case of failure to comply with the [Code of Conduct](https://github.com/cosmos/ibc-go/blob/main/CODE_OF_CONDUCT.md)
 
 
 ## Versioning

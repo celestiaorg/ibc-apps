@@ -1,4 +1,4 @@
-# Counter contract from [Osmosis Labs](https://github.com/osmosis-labs/osmosis/commit/64393a14e18b2562d72a3892eec716197a3716c7)
+# Counter contract from [Osmosis Labs](https://github.com/osmosis-labs/osmosis/tree/64393a14e18b2562d72a3892eec716197a3716c7)
 
 This contract is a modification of the standard CosmWasm `counter` contract.
 Namely, it tracks a counter, _by sender_.
